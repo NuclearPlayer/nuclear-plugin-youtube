@@ -32,6 +32,8 @@ const createProvider = (api: NuclearPluginAPI): StreamingProvider => ({
       url: info.stream_url,
       protocol: 'https',
       durationMs: info.duration ? info.duration * 1000 : undefined,
+      container: info.container ?? undefined,
+      codec: info.codec ?? undefined,
       source: { provider: PROVIDER_ID, id: candidateId },
     };
   },
