@@ -2,9 +2,35 @@ import type {
   NuclearPlugin,
   NuclearPluginAPI,
   StreamingProvider,
+  YtdlpSearchResult,
 } from '@nuclearplayer/plugin-sdk';
 
 const PROVIDER_ID = 'youtube';
+
+const buildQuotedQuery = (artist: string, title: string): string => {
+  const safeTitle = title.replace(/"/g, '');
+  return `${artist} "${safeTitle}"`;
+};
+
+const dedupeById = (results: YtdlpSearchResult[]): YtdlpSearchResult[] => {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    if (seen.has(result.id)) {
+      return false;
+    }
+    seen.add(result.id);
+    return true;
+  });
+};
+
+const valueOrEmpty = (
+  outcome: PromiseSettledResult<YtdlpSearchResult[]>,
+): YtdlpSearchResult[] => {
+  if (outcome.status === 'fulfilled') {
+    return outcome.value;
+  }
+  return [];
+};
 
 const createProvider = (api: NuclearPluginAPI): StreamingProvider => ({
   id: PROVIDER_ID,
@@ -12,8 +38,22 @@ const createProvider = (api: NuclearPluginAPI): StreamingProvider => ({
   name: 'YouTube',
 
   searchForTrack: async (artist, title) => {
-    const query = `${artist} ${title}`;
-    const results = await api.Ytdlp.search(query);
+    const [quotedOutcome, plainOutcome] = await Promise.allSettled([
+      api.Ytdlp.search(buildQuotedQuery(artist, title)),
+      api.Ytdlp.search(`${artist} ${title}`),
+    ]);
+
+    if (
+      quotedOutcome.status === 'rejected' &&
+      plainOutcome.status === 'rejected'
+    ) {
+      throw quotedOutcome.reason;
+    }
+
+    const results = dedupeById([
+      ...valueOrEmpty(quotedOutcome),
+      ...valueOrEmpty(plainOutcome),
+    ]);
 
     return results.map((result) => ({
       id: result.id,
